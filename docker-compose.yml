@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  rainyun-qiandao:
+    build: .
+    container_name: rainyun-qiandao
+    environment:
+      - RAINYUN_USER=${RAINYUN_USER}        # 雨云用户名
+      - RAINYUN_PWD=${RAINYUN_PWD}          # 雨云密码
+      - TIMEOUT=${TIMEOUT:-15}              # 连接超时等待(秒)
+      - MAX_DELAY=${MAX_DELAY:-90}          # 最大随机等待延时(分钟)
+      - DEBUG=${DEBUG:-false}               # 调试模式
+    volumes:
+      - ./temp:/app/temp                    # 临时文件目录
+      - ./cookies.json:/app/cookies.json    # 持久化 cookies
+      - ./rainyun.py:/app/rainyun.py
+    shm_size: '2gb'                         # Chrome 需要足够的共享内存
+    restart: "no"

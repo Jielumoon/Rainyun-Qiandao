@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import random
@@ -17,6 +18,89 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
+COOKIE_FILE = "cookies.json"
+
+
+def save_cookies(driver: WebDriver):
+    """保存 cookies 到文件"""
+    cookies = driver.get_cookies()
+    with open(COOKIE_FILE, "w") as f:
+        json.dump(cookies, f)
+    logger.info(f"Cookies 已保存到 {COOKIE_FILE}")
+
+
+def load_cookies(driver: WebDriver) -> bool:
+    """从文件加载 cookies"""
+    if not os.path.exists(COOKIE_FILE):
+        logger.info("未找到 cookies 文件")
+        return False
+    try:
+        with open(COOKIE_FILE, "r") as f:
+            cookies = json.load(f)
+        # 先访问域名以便设置 cookie
+        driver.get("https://app.rainyun.com")
+        for cookie in cookies:
+            # 移除可能导致问题的字段
+            cookie.pop("sameSite", None)
+            cookie.pop("expiry", None)
+            try:
+                driver.add_cookie(cookie)
+            except Exception as e:
+                logger.warning(f"添加 cookie 失败: {e}")
+        logger.info("Cookies 已加载")
+        return True
+    except Exception as e:
+        logger.error(f"加载 cookies 失败: {e}")
+        return False
+
+
+def check_login_status(driver: WebDriver, wait: WebDriverWait) -> bool:
+    """检查是否已登录"""
+    driver.get("https://app.rainyun.com/dashboard")
+    time.sleep(3)
+    # 如果跳转到登录页面，说明 cookie 失效
+    if "login" in driver.current_url:
+        logger.info("Cookie 已失效，需要重新登录")
+        return False
+    # 检查是否成功加载 dashboard
+    if driver.current_url == "https://app.rainyun.com/dashboard":
+        logger.info("Cookie 有效，已登录")
+        return True
+    return False
+
+
+def do_login(driver: WebDriver, wait: WebDriverWait, user: str, pwd: str) -> bool:
+    """执行登录流程"""
+    logger.info("发起登录请求")
+    driver.get("https://app.rainyun.com/auth/login")
+    try:
+        username = wait.until(EC.visibility_of_element_located((By.NAME, 'login-field')))
+        password = wait.until(EC.visibility_of_element_located((By.NAME, 'login-password')))
+        login_button = wait.until(EC.visibility_of_element_located((By.XPATH,
+                                                                    '//*[@id="app"]/div[1]/div[1]/div/div[2]/fade/div/div/span/form/button')))
+        username.send_keys(user)
+        password.send_keys(pwd)
+        login_button.click()
+    except TimeoutException:
+        logger.error("页面加载超时，请尝试延长超时时间或切换到国内网络环境！")
+        return False
+    try:
+        login_captcha = wait.until(EC.visibility_of_element_located((By.ID, 'tcaptcha_iframe_dy')))
+        logger.warning("触发验证码！")
+        driver.switch_to.frame("tcaptcha_iframe_dy")
+        process_captcha()
+    except TimeoutException:
+        logger.info("未触发验证码")
+    time.sleep(5)
+    driver.switch_to.default_content()
+    if driver.current_url == "https://app.rainyun.com/dashboard":
+        logger.info("登录成功！")
+        save_cookies(driver)
+        return True
+    else:
+        logger.error("登录失败！")
+        return False
+
 
 def init_selenium() -> WebDriver:
     ops = Options()
@@ -26,6 +110,15 @@ def init_selenium() -> WebDriver:
     if linux:
         ops.add_argument("--headless")
         ops.add_argument("--disable-gpu")
+        ops.add_argument("--disable-dev-shm-usage")
+        # 设置 Chromium 二进制路径（支持 ARM 和 AMD64）
+        chrome_bin = os.environ.get("CHROME_BIN")
+        if chrome_bin and os.path.exists(chrome_bin):
+            ops.binary_location = chrome_bin
+        # 容器环境使用系统 chromedriver
+        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/local/bin/chromedriver")
+        if os.path.exists(chromedriver_path):
+            return webdriver.Chrome(service=Service(chromedriver_path), options=ops)
         return webdriver.Chrome(service=Service("./chromedriver"), options=ops)
     return webdriver.Chrome(service=Service("chromedriver.exe"), options=ops)
 
@@ -180,19 +273,19 @@ def compute_similarity(img1_path, img2_path):
 
 
 if __name__ == "__main__":
-    # 连接超时等待
-    timeout = 15
-    # 最大随机等待延时
-    max_delay = 90
-    # 用户名
-    user = "username"
-    # 密码
-    pwd = "12345678"
-    # 调试模式
-    debug = False
-    # Linux 模式
-    # [!] 在Windows环境下，带-headless参数会导致异常，应该关闭此项。
-    linux = False
+    # 从环境变量读取配置
+    timeout = int(os.environ.get("TIMEOUT", "15"))
+    max_delay = int(os.environ.get("MAX_DELAY", "90"))
+    user = os.environ.get("RAINYUN_USER", "")
+    pwd = os.environ.get("RAINYUN_PWD", "")
+    debug = os.environ.get("DEBUG", "false").lower() == "true"
+    # 容器环境默认启用 Linux 模式
+    linux = os.environ.get("LINUX_MODE", "true").lower() == "true"
+    
+    # 检查必要配置
+    if not user or not pwd:
+        print("错误: 请设置 RAINYUN_USER 和 RAINYUN_PWD 环境变量")
+        exit(1)
 
     # 以下为代码执行区域，请勿修改！
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -218,48 +311,39 @@ if __name__ == "__main__":
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
         "source": js
     })
-    logger.info("发起登录请求")
-    driver.get("https://app.rainyun.com/auth/login")
     wait = WebDriverWait(driver, timeout)
-    try:
-        username = wait.until(EC.visibility_of_element_located((By.NAME, 'login-field')))
-        password = wait.until(EC.visibility_of_element_located((By.NAME, 'login-password')))
-        login_button = wait.until(EC.visibility_of_element_located((By.XPATH,
-                                                                    '//*[@id="app"]/div[1]/div[1]/div/div[2]/fade/div/div/span/form/button')))
-        username.send_keys(user)
-        password.send_keys(pwd)
-        login_button.click()
-    except TimeoutException:
-        logger.error("页面加载超时，请尝试延长超时时间或切换到国内网络环境！")
-        exit()
-    try:
-        login_captcha = wait.until(EC.visibility_of_element_located((By.ID, 'tcaptcha_iframe_dy')))
-        logger.warning("触发验证码！")
-        driver.switch_to.frame("tcaptcha_iframe_dy")
-        process_captcha()
-    except TimeoutException:
-        logger.info("未触发验证码")
-    time.sleep(5)
+    
+    # 尝试使用 cookie 登录
+    logged_in = False
+    if load_cookies(driver):
+        logged_in = check_login_status(driver, wait)
+    
+    # cookie 无效则进行正常登录
+    if not logged_in:
+        logged_in = do_login(driver, wait, user, pwd)
+    
+    if not logged_in:
+        logger.error("登录失败，退出程序")
+        driver.quit()
+        exit(1)
+    
+    logger.info("正在转到赚取积分页")
+    driver.get("https://app.rainyun.com/account/reward/earn")
+    driver.implicitly_wait(5)
+    earn = driver.find_element(By.XPATH,
+                               "//span[contains(text(), '每日签到')]/ancestor::div[1]//a[contains(text(), '领取奖励')]")
+    logger.info("点击赚取积分")
+    earn.click()
+    logger.info("处理验证码")
+    driver.switch_to.frame("tcaptcha_iframe_dy")
+    process_captcha()
     driver.switch_to.default_content()
-    if driver.current_url == "https://app.rainyun.com/dashboard":
-        logger.info("登录成功！")
-        logger.info("正在转到赚取积分页")
-        driver.get("https://app.rainyun.com/account/reward/earn")
-        driver.implicitly_wait(5)
-        earn = driver.find_element(By.XPATH,
-                                   '//*[@id="app"]/div[1]/div[3]/div[2]/div/div/div[2]/div[2]/div/div/div/div[1]/div/div[1]/div/div[1]/div/span[2]/a')
-        logger.info("点击赚取积分")
-        earn.click()
-        logger.info("处理验证码")
-        driver.switch_to.frame("tcaptcha_iframe_dy")
-        process_captcha()
-        driver.switch_to.default_content()
-        driver.implicitly_wait(5)
-        points_raw = driver.find_element(By.XPATH,
-                                         '//*[@id="app"]/div[1]/div[3]/div[2]/div/div/div[2]/div[1]/div[1]/div/p/div/h3').get_attribute(
-            "textContent")
-        current_points = int(''.join(re.findall(r'\d+', points_raw)))
-        logger.info(f"当前剩余积分: {current_points} | 约为 {current_points / 2000:.2f} 元")
-        logger.info("任务执行成功！")
-    else:
-        logger.error("登录失败！")
+    driver.implicitly_wait(5)
+    points_raw = driver.find_element(By.XPATH,
+                                     '//*[@id="app"]/div[1]/div[3]/div[2]/div/div/div[2]/div[1]/div[1]/div/p/div/h3').get_attribute(
+        "textContent")
+    current_points = int(''.join(re.findall(r'\d+', points_raw)))
+    logger.info(f"当前剩余积分: {current_points} | 约为 {current_points / 2000:.2f} 元")
+    logger.info("任务执行成功！")
+    driver.quit()
+
