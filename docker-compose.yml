@@ -14,7 +14,8 @@ services:
       - RAINYUN_API_KEY=${RAINYUN_API_KEY:-}           # API密钥
       - AUTO_RENEW=${AUTO_RENEW:-true}                 # 自动续费开关
       - RENEW_THRESHOLD_DAYS=${RENEW_THRESHOLD_DAYS:-7}  # 续费触发阈值
-    # - PUSH_KEY=${PUSH_KEY}     #配置server酱key
+      - RENEW_PRODUCT_IDS=${RENEW_PRODUCT_IDS:-}         # 续费白名单
+      - PUSH_KEY=${PUSH_KEY:-}                           # Server酱推送密钥
     volumes:
       - ./temp:/app/temp                    # 临时文件目录
       - ./cookies.json:/app/cookies.json    # 持久化 cookies

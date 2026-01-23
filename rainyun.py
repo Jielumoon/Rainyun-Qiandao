@@ -393,7 +393,7 @@ def run():
         linux = os.environ.get("LINUX_MODE", "true").lower() == "true"
         debug = os.environ.get("DEBUG", "false").lower() == "true"
 
-        ver = "2.3"
+        ver = "2.4"
         logger.info(f"━━━━━━ 雨云签到 v{ver} ━━━━━━")
 
         delay = random.randint(0, max_delay)

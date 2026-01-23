@@ -57,6 +57,7 @@ ENV RAINYUN_API_KEY=""
 ENV AUTO_RENEW=true
 ENV RENEW_THRESHOLD_DAYS=7
 ENV RENEW_PRODUCT_IDS=""
+ENV PUSH_KEY=""
 # Chromium 路径（Debian 系统）
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
