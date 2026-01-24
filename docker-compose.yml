@@ -16,6 +16,8 @@ services:
       - RENEW_THRESHOLD_DAYS=${RENEW_THRESHOLD_DAYS:-7}  # 续费触发阈值
       - RENEW_PRODUCT_IDS=${RENEW_PRODUCT_IDS:-}         # 续费白名单
       - PUSH_KEY=${PUSH_KEY:-}                           # Server酱推送密钥
+      - HITOKOTO=${HITOKOTO:-true}                        # 一言开关
+      - CONSOLE=${CONSOLE:-false}                         # 控制台输出开关
     volumes:
       - ./temp:/app/temp                    # 临时文件目录
       - ./cookies.json:/app/cookies.json    # 持久化 cookies
