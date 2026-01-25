@@ -12,6 +12,7 @@ from dataclasses import dataclass
 import cv2
 import ddddocr
 import requests
+from api_client import RainyunAPI
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver import ActionChains
@@ -78,6 +79,7 @@ class RuntimeContext:
     ocr: ddddocr.DdddOcr
     det: ddddocr.DdddOcr
     temp_dir: str
+    api: RainyunAPI
 
 
 def build_app_url(path: str) -> str:
@@ -145,6 +147,18 @@ def check_login_status(ctx: RuntimeContext) -> bool:
     return False
 
 
+# 定位符常量化 (让维护更简单)
+XPATH_CONFIG = {
+    "LOGIN_BTN": "//button[@type='submit' and contains(., '登') and contains(., '录')]",
+    "SIGN_IN_BTN": "//div[contains(@class, 'card-header') and .//span[contains(text(), '每日签到')]]//a[contains(text(), '领取奖励')]",
+    "CAPTCHA_SUBMIT": "//div[@id='tcStatus']/div[2]/div[2]/div/div", # 验证码确认按钮
+    "CAPTCHA_RELOAD": "reload", # ID
+    "CAPTCHA_BG": "slideBg", # ID
+    "CAPTCHA_OP": "tcOperation", # ID
+    "CAPTCHA_IMG_INSTRUCTION": "//div[@id='instruction']//img"
+}
+
+
 def do_login(ctx: RuntimeContext, user: str, pwd: str) -> bool:
     """执行登录流程"""
     logger.info("发起登录请求")
@@ -152,8 +166,8 @@ def do_login(ctx: RuntimeContext, user: str, pwd: str) -> bool:
     try:
         username = ctx.wait.until(EC.visibility_of_element_located((By.NAME, 'login-field')))
         password = ctx.wait.until(EC.visibility_of_element_located((By.NAME, 'login-password')))
-        login_button = ctx.wait.until(EC.visibility_of_element_located((By.XPATH,
-                                                                    '//*[@id="app"]/div[1]/div[1]/div/div[2]/fade/div/div/span/form/button')))
+        # 优化：使用文本和类型定位登录按钮，增强稳定性
+        login_button = ctx.wait.until(EC.visibility_of_element_located((By.XPATH, XPATH_CONFIG["LOGIN_BTN"])))
         username.send_keys(user)
         password.send_keys(pwd)
         login_button.click()
@@ -267,6 +281,11 @@ def get_element_size(element) -> tuple[float, float]:
 
 
 def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
+    """
+    处理验证码逻辑
+    - 整体重试上限由 CAPTCHA_RETRY_LIMIT (config.py) 控制
+    - 内部图片下载重试由 DOWNLOAD_MAX_RETRIES (config.py) 独立控制
+    """
     if retry_count >= CAPTCHA_RETRY_LIMIT:
         logger.error("验证码重试次数过多，任务失败")
         return False
@@ -307,7 +326,7 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
                     position_key = f"sprite_{i + 1}.position"
                     positon = result[position_key]
                     logger.info(f"图案 {i + 1} 位于 ({positon})，匹配率：{result[similarity_key]}")
-                    slide_bg = ctx.wait.until(EC.visibility_of_element_located((By.XPATH, '//*[@id="slideBg"]')))
+                    slide_bg = ctx.wait.until(EC.visibility_of_element_located((By.ID, XPATH_CONFIG["CAPTCHA_BG"])))
                     style = slide_bg.get_attribute("style")
                     x, y = int(positon.split(",")[0]), int(positon.split(",")[1])
                     width_raw, height_raw = captcha.shape[1], captcha.shape[0]
@@ -320,11 +339,11 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
                     final_x, final_y = int(x_offset + x / width_raw * width), int(y_offset + y / height_raw * height)
                     ActionChains(ctx.driver).move_to_element_with_offset(slide_bg, final_x, final_y).click().perform()
                 confirm = ctx.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, '//*[@id="tcStatus"]/div[2]/div[2]/div/div')))
+                    EC.element_to_be_clickable((By.XPATH, XPATH_CONFIG["CAPTCHA_SUBMIT"])))
                 logger.info("提交验证码")
                 confirm.click()
                 time.sleep(5)
-                result_el = ctx.wait.until(EC.visibility_of_element_located((By.XPATH, '//*[@id="tcOperation"]')))
+                result_el = ctx.wait.until(EC.visibility_of_element_located((By.ID, XPATH_CONFIG["CAPTCHA_OP"])))
                 if 'show-success' in result_el.get_attribute("class"):
                     logger.info("验证码通过")
                     return True
@@ -335,7 +354,7 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
         else:
             logger.error("当前验证码识别率低，尝试刷新")
 
-        reload_btn = ctx.driver.find_element(By.XPATH, '//*[@id="reload"]')
+        reload_btn = ctx.driver.find_element(By.ID, XPATH_CONFIG["CAPTCHA_RELOAD"])
         time.sleep(2)
         reload_btn.click()
         time.sleep(2)
@@ -345,7 +364,7 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
         logger.error(f"验证码处理异常: {type(e).__name__} - {e}")
         # 尝试刷新验证码重试
         try:
-            reload_btn = ctx.driver.find_element(By.XPATH, '//*[@id="reload"]')
+            reload_btn = ctx.driver.find_element(By.ID, XPATH_CONFIG["CAPTCHA_RELOAD"])
             time.sleep(2)
             reload_btn.click()
             time.sleep(2)
@@ -357,14 +376,14 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
 
 def download_captcha_img(ctx: RuntimeContext):
     clear_temp_dir(ctx.temp_dir)
-    slide_bg = ctx.wait.until(EC.visibility_of_element_located((By.XPATH, '//*[@id="slideBg"]')))
+    slide_bg = ctx.wait.until(EC.visibility_of_element_located((By.ID, XPATH_CONFIG["CAPTCHA_BG"])))
     img1_style = slide_bg.get_attribute("style")
     img1_url = get_url_from_style(img1_style)
     logger.info("开始下载验证码图片(1): " + img1_url)
     # 修复：检查下载是否成功
     if not download_image(img1_url, temp_path(ctx, "captcha.jpg")):
         raise CaptchaRetryableError("验证码背景图下载失败")
-    sprite = ctx.wait.until(EC.visibility_of_element_located((By.XPATH, '//*[@id="instruction"]/div/img')))
+    sprite = ctx.wait.until(EC.visibility_of_element_located((By.XPATH, XPATH_CONFIG["CAPTCHA_IMG_INSTRUCTION"])))
     img2_url = sprite.get_attribute("src")
     logger.info("开始下载验证码图片(2): " + img2_url)
     # 修复：检查下载是否成功
@@ -445,7 +464,19 @@ def run():
             logger.error("请设置 RAINYUN_USER 和 RAINYUN_PWD 环境变量")
             return
 
+        api_key = os.environ.get("RAINYUN_API_KEY", "")
+        api_client = RainyunAPI(api_key)
+
         logger.info(f"━━━━━━ 雨云签到 v{APP_VERSION} ━━━━━━")
+        
+        # 初始积分记录
+        start_points = 0
+        if api_key:
+            try:
+                start_points = api_client.get_user_points()
+                logger.info(f"签到前初始积分: {start_points}")
+            except Exception as e:
+                logger.warning(f"获取初始积分失败: {e}")
 
         delay = random.randint(0, max_delay)
         delay_sec = random.randint(0, 60)
@@ -470,7 +501,8 @@ def run():
             wait=wait,
             ocr=ocr,
             det=det,
-            temp_dir=temp_dir
+            temp_dir=temp_dir,
+            api=api_client
         )
 
         # 尝试使用 cookie 登录
@@ -489,11 +521,11 @@ def run():
         logger.info("正在转到赚取积分页")
         ctx.driver.get(build_app_url("/account/reward/earn"))
 
-        # 检查签到状态：先找"领取奖励"按钮，找不到就检查是否已签到
+        # 检查签到状态：使用 card-header 语义化定位，彻底消除位置依赖
         try:
             # 使用显示等待寻找按钮
             earn = ctx.wait.until(EC.presence_of_element_located((By.XPATH,
-                                       "//span[contains(text(), '每日签到')]/ancestor::div[1]//a[contains(text(), '领取奖励')]")))
+                                       "//div[contains(@class, 'card-header') and .//span[contains(text(), '每日签到')]]//a[contains(text(), '领取奖励')]")))
             logger.info("点击赚取积分")
             earn.click()
         except TimeoutException:
@@ -503,14 +535,13 @@ def run():
             for pattern in already_signed_patterns:
                 if pattern in page_source:
                     logger.info(f"今日已签到（检测到：{pattern}），跳过签到流程")
-                    # 直接跳到获取积分信息
+                    # 使用 API 获取最新积分，稳定可靠
                     try:
-                        points_raw = ctx.wait.until(EC.visibility_of_element_located((By.XPATH,
-                            '//*[@id="app"]/div[1]/div[3]/div[2]/div/div/div[2]/div[1]/div[1]/div/p/div/h3'))).get_attribute("textContent")
-                        current_points = int(''.join(re.findall(r'\d+', points_raw)))
-                        logger.info(f"当前剩余积分: {current_points} | 约为 {current_points / POINTS_TO_CNY_RATE:.2f} 元")
+                        current_points = ctx.api.get_user_points()
+                        earned = current_points - start_points
+                        logger.info(f"当前剩余积分: {current_points} (本次获得 {earned} 分) | 约为 {current_points / POINTS_TO_CNY_RATE:.2f} 元")
                     except Exception:
-                        logger.info("无法获取当前积分信息")
+                        logger.info("无法通过 API 获取当前积分信息")
                     return
             # 如果既没找到领取按钮，也没检测到已签到，说明页面结构可能变了
             raise Exception("未找到签到按钮，且未检测到已签到状态，可能页面结构已变更")
@@ -521,11 +552,15 @@ def run():
             logger.error(f"验证码重试次数过多，任务失败。当前页面状态: {ctx.driver.current_url}")
             raise Exception("验证码识别重试次数过多，签到失败")
         ctx.driver.switch_to.default_content()
-        points_raw = ctx.wait.until(EC.visibility_of_element_located((By.XPATH,
-                                         '//*[@id="app"]/div[1]/div[3]/div[2]/div/div/div[2]/div[1]/div[1]/div/p/div/h3'))).get_attribute(
-            "textContent")
-        current_points = int(''.join(re.findall(r'\d+', points_raw)))
-        logger.info(f"当前剩余积分: {current_points} | 约为 {current_points / POINTS_TO_CNY_RATE:.2f} 元")
+
+        # 签到成功后，通过 API 刷新积分余额
+        try:
+            current_points = ctx.api.get_user_points()
+            earned = current_points - start_points
+            logger.info(f"当前剩余积分: {current_points} (本次获得 {earned} 分) | 约为 {current_points / POINTS_TO_CNY_RATE:.2f} 元")
+        except Exception:
+            logger.info("签到后通过 API 更新积分失败")
+        
         logger.info("任务执行成功！")
     except Exception as e:
         logger.error(f"脚本执行异常终止: {e}")
