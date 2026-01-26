@@ -151,11 +151,12 @@ def check_login_status(ctx: RuntimeContext) -> bool:
 XPATH_CONFIG = {
     "LOGIN_BTN": "//button[@type='submit' and contains(., '登') and contains(., '录')]",
     "SIGN_IN_BTN": "//div[contains(@class, 'card-header') and .//span[contains(text(), '每日签到')]]//a[contains(text(), '领取奖励')]",
-    "CAPTCHA_SUBMIT": "//div[@id='tcStatus']/div[2]/div[2]/div/div", # 验证码确认按钮
-    "CAPTCHA_RELOAD": "reload", # ID
-    "CAPTCHA_BG": "slideBg", # ID
-    "CAPTCHA_OP": "tcOperation", # ID
-    "CAPTCHA_IMG_INSTRUCTION": "//div[@id='instruction']//img"
+    # 验证码相关定位符统一为 (By, selector) 结构，避免 ID/XPath 混用
+    "CAPTCHA_SUBMIT": (By.XPATH, "//div[@id='tcStatus']/div[2]/div[2]/div/div"),
+    "CAPTCHA_RELOAD": (By.ID, "reload"),
+    "CAPTCHA_BG": (By.ID, "slideBg"),
+    "CAPTCHA_OP": (By.ID, "tcOperation"),
+    "CAPTCHA_IMG_INSTRUCTION": (By.XPATH, "//div[@id='instruction']//img")
 }
 
 
@@ -289,6 +290,18 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
     if retry_count >= CAPTCHA_RETRY_LIMIT:
         logger.error("验证码重试次数过多，任务失败")
         return False
+
+    def refresh_captcha() -> bool:
+        try:
+            reload_btn = ctx.driver.find_element(*XPATH_CONFIG["CAPTCHA_RELOAD"])
+            time.sleep(2)
+            reload_btn.click()
+            time.sleep(2)
+            return True
+        except Exception as refresh_error:
+            logger.error(f"无法刷新验证码，放弃重试: {refresh_error}")
+            return False
+
     try:
         download_captcha_img(ctx)
         if check_captcha(ctx):
@@ -318,15 +331,15 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
                             result[similarity_key] = similarity
                             result[position_key] = f"{int((x1 + x2) / 2)},{int((y1 + y2) / 2)}"
                     else:
-                            result[similarity_key] = similarity
-                            result[position_key] = f"{int((x1 + x2) / 2)},{int((y1 + y2) / 2)}"
+                        result[similarity_key] = similarity
+                        result[position_key] = f"{int((x1 + x2) / 2)},{int((y1 + y2) / 2)}"
             if check_answer(result):
                 for i in range(3):
                     similarity_key = f"sprite_{i + 1}.similarity"
                     position_key = f"sprite_{i + 1}.position"
                     positon = result[position_key]
                     logger.info(f"图案 {i + 1} 位于 ({positon})，匹配率：{result[similarity_key]}")
-                    slide_bg = ctx.wait.until(EC.visibility_of_element_located((By.ID, XPATH_CONFIG["CAPTCHA_BG"])))
+                    slide_bg = ctx.wait.until(EC.visibility_of_element_located(XPATH_CONFIG["CAPTCHA_BG"]))
                     style = slide_bg.get_attribute("style")
                     x, y = int(positon.split(",")[0]), int(positon.split(",")[1])
                     width_raw, height_raw = captcha.shape[1], captcha.shape[0]
@@ -339,11 +352,11 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
                     final_x, final_y = int(x_offset + x / width_raw * width), int(y_offset + y / height_raw * height)
                     ActionChains(ctx.driver).move_to_element_with_offset(slide_bg, final_x, final_y).click().perform()
                 confirm = ctx.wait.until(
-                    EC.element_to_be_clickable((By.XPATH, XPATH_CONFIG["CAPTCHA_SUBMIT"])))
+                    EC.element_to_be_clickable(XPATH_CONFIG["CAPTCHA_SUBMIT"]))
                 logger.info("提交验证码")
                 confirm.click()
                 time.sleep(5)
-                result_el = ctx.wait.until(EC.visibility_of_element_located((By.ID, XPATH_CONFIG["CAPTCHA_OP"])))
+                result_el = ctx.wait.until(EC.visibility_of_element_located(XPATH_CONFIG["CAPTCHA_OP"]))
                 if 'show-success' in result_el.get_attribute("class"):
                     logger.info("验证码通过")
                     return True
@@ -354,36 +367,28 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
         else:
             logger.error("当前验证码识别率低，尝试刷新")
 
-        reload_btn = ctx.driver.find_element(By.ID, XPATH_CONFIG["CAPTCHA_RELOAD"])
-        time.sleep(2)
-        reload_btn.click()
-        time.sleep(2)
+        if not refresh_captcha():
+            return False
         return process_captcha(ctx, retry_count + 1)
     except (TimeoutException, ValueError, CaptchaRetryableError) as e:
         # 修复：仅捕获预期异常（超时、解析失败、下载失败），其他程序错误直接抛出便于排查
         logger.error(f"验证码处理异常: {type(e).__name__} - {e}")
         # 尝试刷新验证码重试
-        try:
-            reload_btn = ctx.driver.find_element(By.ID, XPATH_CONFIG["CAPTCHA_RELOAD"])
-            time.sleep(2)
-            reload_btn.click()
-            time.sleep(2)
-            return process_captcha(ctx, retry_count + 1)
-        except Exception as refresh_error:
-            logger.error(f"无法刷新验证码，放弃重试: {refresh_error}")
+        if not refresh_captcha():
             return False
+        return process_captcha(ctx, retry_count + 1)
 
 
 def download_captcha_img(ctx: RuntimeContext):
     clear_temp_dir(ctx.temp_dir)
-    slide_bg = ctx.wait.until(EC.visibility_of_element_located((By.ID, XPATH_CONFIG["CAPTCHA_BG"])))
+    slide_bg = ctx.wait.until(EC.visibility_of_element_located(XPATH_CONFIG["CAPTCHA_BG"]))
     img1_style = slide_bg.get_attribute("style")
     img1_url = get_url_from_style(img1_style)
     logger.info("开始下载验证码图片(1): " + img1_url)
     # 修复：检查下载是否成功
     if not download_image(img1_url, temp_path(ctx, "captcha.jpg")):
         raise CaptchaRetryableError("验证码背景图下载失败")
-    sprite = ctx.wait.until(EC.visibility_of_element_located((By.XPATH, XPATH_CONFIG["CAPTCHA_IMG_INSTRUCTION"])))
+    sprite = ctx.wait.until(EC.visibility_of_element_located(XPATH_CONFIG["CAPTCHA_IMG_INSTRUCTION"]))
     img2_url = sprite.get_attribute("src")
     logger.info("开始下载验证码图片(2): " + img2_url)
     # 修复：检查下载是否成功
@@ -415,10 +420,11 @@ def check_answer(d: dict) -> bool:
     if not d or len(d) < 6:
         logger.warning(f"验证码识别结果不完整，当前仅有 {len(d)} 个键，预期至少 6 个")
         return False
-    flipped = dict()
-    for key in d.keys():
-        flipped[d[key]] = key
-    return len(d.values()) == len(flipped.keys())
+    positions = [value for key, value in d.items() if key.endswith(".position")]
+    if len(positions) < 3:
+        logger.warning("验证码识别坐标不足，无法校验")
+        return False
+    return len(positions) == len(set(positions))
 
 
 def compute_similarity(img1_path, img2_path):
