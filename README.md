@@ -18,7 +18,7 @@ cp .env.example .env
 # 填入 RAINYUN_USER 和 RAINYUN_PWD
 
 # 2. 构建并运行
-docker compose up --build
+docker-compose up --build
 ```
 
 ## 环境变量
@@ -82,7 +82,7 @@ docker compose up --build
 
 ```bash
 # 每天早上 8 点执行
-0 8 * * * docker compose -f /path/to/docker compose run --rm rainyun-qiandao
+0 8 * * * docker compose -f /path/to/docker-compose.yml run --rm rainyun-qiandao
 ```
 
 ## 致谢
