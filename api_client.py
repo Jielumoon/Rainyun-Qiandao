@@ -8,7 +8,7 @@ from typing import Optional
 
 import requests
 
-from config import API_BASE_URL, MAX_RETRIES, REQUEST_TIMEOUT, RETRY_DELAY
+from rainyun.config import Config, get_default_config
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,7 @@ class RainyunAPIError(Exception):
 class RainyunAPI:
     """雨云 API 客户端"""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, config: Optional[Config] = None):
         """
         初始化 API 客户端
 
@@ -29,6 +29,11 @@ class RainyunAPI:
             api_key: 雨云 API 密钥（从后台获取）
         """
         self.api_key = api_key
+        self.config = config or get_default_config()
+        self.api_base_url = self.config.api_base_url
+        self.request_timeout = self.config.request_timeout
+        self.max_retries = self.config.max_retries
+        self.retry_delay = self.config.retry_delay
         self.headers = {
             "x-api-key": api_key,
             "Content-Type": "application/json"
@@ -49,15 +54,15 @@ class RainyunAPI:
         Raises:
             RainyunAPIError: API 调用失败时抛出
         """
-        url = f"{API_BASE_URL}{endpoint}"
+        url = f"{self.api_base_url}{endpoint}"
         last_error = None
 
-        for attempt in range(1, MAX_RETRIES + 1):
+        for attempt in range(1, self.max_retries + 1):
             try:
                 if method.upper() == "GET":
-                    response = requests.get(url, headers=self.headers, timeout=REQUEST_TIMEOUT)
+                    response = requests.get(url, headers=self.headers, timeout=self.request_timeout)
                 else:
-                    response = requests.post(url, headers=self.headers, json=data, timeout=REQUEST_TIMEOUT)
+                    response = requests.post(url, headers=self.headers, json=data, timeout=self.request_timeout)
 
                 # 先尝试解析 JSON，不管 HTTP 状态码
                 # 雨云 API 业务错误也返回 JSON（如 400 + {"code":70007,"message":"..."})
@@ -81,12 +86,12 @@ class RainyunAPI:
             except requests.RequestException as e:
                 # 网络层错误（连接超时、DNS 解析失败等），可以重试
                 last_error = e
-                if attempt < MAX_RETRIES:
-                    logger.warning(f"请求失败 (第 {attempt} 次): {e}，{RETRY_DELAY}s 后重试...")
-                    time.sleep(RETRY_DELAY)
+                if attempt < self.max_retries:
+                    logger.warning(f"请求失败 (第 {attempt} 次): {e}，{self.retry_delay}s 后重试...")
+                    time.sleep(self.retry_delay)
                 continue
 
-        raise RainyunAPIError(f"网络请求失败 (已重试 {MAX_RETRIES} 次): {last_error}")
+        raise RainyunAPIError(f"网络请求失败 (已重试 {self.max_retries} 次): {last_error}")
 
     def get_server_ids(self, product_type: str = "rgs") -> list:
         """

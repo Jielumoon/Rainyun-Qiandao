@@ -23,18 +23,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.wait import WebDriverWait
 
-from .config import (
-    APP_BASE_URL,
-    APP_VERSION,
-    CAPTCHA_RETRY_LIMIT,
-    CAPTCHA_RETRY_UNLIMITED,
-    CHROME_LOW_MEMORY,
-    COOKIE_FILE,
-    DOWNLOAD_MAX_RETRIES,
-    DOWNLOAD_RETRY_DELAY,
-    DOWNLOAD_TIMEOUT,
-    POINTS_TO_CNY_RATE,
-)
+from .config import Config, get_default_config
 
 # 自定义异常：验证码处理过程中可重试的错误
 class CaptchaRetryableError(Exception):
@@ -42,11 +31,14 @@ class CaptchaRetryableError(Exception):
     pass
 
 try:
-    from notify import send
+    from notify import configure, send
 
     print("✅ 通知模块加载成功")
 except Exception as e:
     print(f"⚠️ 通知模块加载失败：{e}")
+
+    def configure(_config: Config) -> None:
+        pass
 
     def send(title, content):
         pass
@@ -82,10 +74,11 @@ class RuntimeContext:
     det: ddddocr.DdddOcr
     temp_dir: str
     api: RainyunAPI
+    config: Config
 
 
-def build_app_url(path: str) -> str:
-    return f"{APP_BASE_URL}/{path.lstrip('/')}"
+def build_app_url(config: Config, path: str) -> str:
+    return f"{config.app_base_url}/{path.lstrip('/')}"
 
 
 def temp_path(ctx: RuntimeContext, filename: str) -> str:
@@ -104,21 +97,21 @@ def clear_temp_dir(temp_dir: str) -> None:
 def save_cookies(ctx: RuntimeContext):
     """保存 cookies 到文件"""
     cookies = ctx.driver.get_cookies()
-    with open(COOKIE_FILE, "w") as f:
+    with open(ctx.config.cookie_file, "w") as f:
         json.dump(cookies, f)
-    logger.info(f"Cookies 已保存到 {COOKIE_FILE}")
+    logger.info(f"Cookies 已保存到 {ctx.config.cookie_file}")
 
 
 def load_cookies(ctx: RuntimeContext) -> bool:
     """从文件加载 cookies"""
-    if not os.path.exists(COOKIE_FILE):
+    if not os.path.exists(ctx.config.cookie_file):
         logger.info("未找到 cookies 文件")
         return False
     try:
-        with open(COOKIE_FILE, "r") as f:
+        with open(ctx.config.cookie_file, "r") as f:
             cookies = json.load(f)
         # 先访问域名以便设置 cookie
-        ctx.driver.get(build_app_url("/"))
+        ctx.driver.get(build_app_url(ctx.config, "/"))
         for cookie in cookies:
             # 移除可能导致问题的字段
             cookie.pop("sameSite", None)
@@ -136,14 +129,14 @@ def load_cookies(ctx: RuntimeContext) -> bool:
 
 def check_login_status(ctx: RuntimeContext) -> bool:
     """检查是否已登录"""
-    ctx.driver.get(build_app_url("/dashboard"))
+    ctx.driver.get(build_app_url(ctx.config, "/dashboard"))
     time.sleep(3)
     # 如果跳转到登录页面，说明 cookie 失效
     if "login" in ctx.driver.current_url:
         logger.info("Cookie 已失效，需要重新登录")
         return False
     # 检查是否成功加载 dashboard
-    if ctx.driver.current_url == build_app_url("/dashboard"):
+    if ctx.driver.current_url == build_app_url(ctx.config, "/dashboard"):
         logger.info("Cookie 有效，已登录")
         return True
     return False
@@ -165,7 +158,7 @@ XPATH_CONFIG = {
 def do_login(ctx: RuntimeContext, user: str, pwd: str) -> bool:
     """执行登录流程"""
     logger.info("发起登录请求")
-    ctx.driver.get(build_app_url("/auth/login"))
+    ctx.driver.get(build_app_url(ctx.config, "/auth/login"))
     try:
         username = ctx.wait.until(EC.visibility_of_element_located((By.NAME, 'login-field')))
         password = ctx.wait.until(EC.visibility_of_element_located((By.NAME, 'login-password')))
@@ -199,7 +192,7 @@ def do_login(ctx: RuntimeContext, user: str, pwd: str) -> bool:
         return False
 
 
-def init_selenium(debug: bool, linux: bool) -> WebDriver:
+def init_selenium(config: Config, debug: bool, linux: bool) -> WebDriver:
     ops = Options()
     ops.add_argument("--no-sandbox")
     if debug:
@@ -209,7 +202,7 @@ def init_selenium(debug: bool, linux: bool) -> WebDriver:
         ops.add_argument("--disable-gpu")
         ops.add_argument("--disable-dev-shm-usage")
         # 低配模式：适用于 1核1G 小鸡
-        if CHROME_LOW_MEMORY:
+        if config.chrome_low_memory:
             logger.info("启用 Chrome 低内存模式")
             # 注意：--single-process 在 Docker 容器中容易导致崩溃，不使用
             ops.add_argument("--disable-extensions")
@@ -221,25 +214,23 @@ def init_selenium(debug: bool, linux: bool) -> WebDriver:
             ops.add_argument("--disable-software-rasterizer")
             ops.add_argument("--js-flags=--max-old-space-size=256")
         # 设置 Chromium 二进制路径（支持 ARM 和 AMD64）
-        chrome_bin = os.environ.get("CHROME_BIN")
-        if chrome_bin and os.path.exists(chrome_bin):
-            ops.binary_location = chrome_bin
+        if config.chrome_bin and os.path.exists(config.chrome_bin):
+            ops.binary_location = config.chrome_bin
         # 容器环境使用系统 chromedriver
-        chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", "/usr/local/bin/chromedriver")
-        if os.path.exists(chromedriver_path):
-            return webdriver.Chrome(service=Service(chromedriver_path), options=ops)
+        if os.path.exists(config.chromedriver_path):
+            return webdriver.Chrome(service=Service(config.chromedriver_path), options=ops)
         return webdriver.Chrome(service=Service("./chromedriver"), options=ops)
     return webdriver.Chrome(service=Service("chromedriver.exe"), options=ops)
 
 
-def download_image(url: str, output_path: str) -> bool:
+def download_image(url: str, output_path: str, config: Config) -> bool:
     output_dir = os.path.dirname(output_path)
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
     last_error = None
-    for attempt in range(1, DOWNLOAD_MAX_RETRIES + 1):
+    for attempt in range(1, config.download_max_retries + 1):
         try:
-            response = requests.get(url, timeout=DOWNLOAD_TIMEOUT)
+            response = requests.get(url, timeout=config.download_timeout)
             if response.status_code == 200:
                 with open(output_path, "wb") as f:
                     f.write(response.content)
@@ -249,9 +240,9 @@ def download_image(url: str, output_path: str) -> bool:
         except requests.RequestException as e:
             last_error = str(e)
             logger.warning(f"下载图片失败 (第 {attempt} 次): {e}, URL: {url}")
-        if attempt < DOWNLOAD_MAX_RETRIES:
-            time.sleep(DOWNLOAD_RETRY_DELAY)
-    logger.error(f"下载图片失败，已重试 {DOWNLOAD_MAX_RETRIES} 次: {last_error}, URL: {url}")
+        if attempt < config.download_max_retries:
+            time.sleep(config.download_retry_delay)
+    logger.error(f"下载图片失败，已重试 {config.download_max_retries} 次: {last_error}, URL: {url}")
     return False
 
 
@@ -298,9 +289,9 @@ def get_element_size(element) -> tuple[float, float]:
 def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
     """
     处理验证码逻辑（循环实现，避免递归栈溢出）
-    - 整体重试上限由 CAPTCHA_RETRY_LIMIT (config.py) 控制
-    - 启用 CAPTCHA_RETRY_UNLIMITED 后无限重试直到成功
-    - 内部图片下载重试由 DOWNLOAD_MAX_RETRIES (config.py) 独立控制
+    - 整体重试上限由配置项 captcha_retry_limit 控制
+    - 启用 captcha_retry_unlimited 后无限重试直到成功
+    - 内部图片下载重试由配置项 download_max_retries 控制
     """
     def refresh_captcha() -> bool:
         try:
@@ -316,10 +307,10 @@ def process_captcha(ctx: RuntimeContext, retry_count: int = 0):
     current_retry = retry_count
     while True:
         # 检查重试次数上限
-        if not CAPTCHA_RETRY_UNLIMITED and current_retry >= CAPTCHA_RETRY_LIMIT:
+        if not ctx.config.captcha_retry_unlimited and current_retry >= ctx.config.captcha_retry_limit:
             logger.error("验证码重试次数过多，任务失败")
             return False
-        if CAPTCHA_RETRY_UNLIMITED and current_retry > 0:
+        if ctx.config.captcha_retry_unlimited and current_retry > 0:
             logger.info(f"无限重试模式，当前第 {current_retry + 1} 次尝试")
 
         try:
@@ -413,13 +404,13 @@ def download_captcha_img(ctx: RuntimeContext):
     img1_url = get_url_from_style(img1_style)
     logger.info("开始下载验证码图片(1): " + img1_url)
     # 修复：检查下载是否成功
-    if not download_image(img1_url, temp_path(ctx, "captcha.jpg")):
+    if not download_image(img1_url, temp_path(ctx, "captcha.jpg"), ctx.config):
         raise CaptchaRetryableError("验证码背景图下载失败")
     sprite = ctx.wait.until(EC.visibility_of_element_located(XPATH_CONFIG["CAPTCHA_IMG_INSTRUCTION"]))
     img2_url = sprite.get_attribute("src")
     logger.info("开始下载验证码图片(2): " + img2_url)
     # 修复：检查下载是否成功
-    if not download_image(img2_url, temp_path(ctx, "sprite.jpg")):
+    if not download_image(img2_url, temp_path(ctx, "sprite.jpg"), ctx.config):
         raise CaptchaRetryableError("验证码小图下载失败")
 
 
@@ -485,26 +476,28 @@ def run():
     driver = None
     temp_dir = None
     debug = False
+    config = None
     try:
-        # 从环境变量读取配置
-        timeout = int(os.environ.get("TIMEOUT", "15"))
-        max_delay = int(os.environ.get("MAX_DELAY", "90"))
-        user = os.environ.get("RAINYUN_USER", "")
-        pwd = os.environ.get("RAINYUN_PWD", "")
-        debug = os.environ.get("DEBUG", "false").lower() == "true"
+        config = Config.from_env()
+        configure(config)
+        timeout = config.timeout
+        max_delay = config.max_delay
+        user = config.rainyun_user
+        pwd = config.rainyun_pwd
+        debug = config.debug
         # 容器环境默认启用 Linux 模式
-        linux = os.environ.get("LINUX_MODE", "true").lower() == "true"
+        linux = config.linux_mode
 
         # 检查必要配置
         if not user or not pwd:
             logger.error("请设置 RAINYUN_USER 和 RAINYUN_PWD 环境变量")
             return
 
-        api_key = os.environ.get("RAINYUN_API_KEY", "")
-        api_client = RainyunAPI(api_key)
+        api_key = config.rainyun_api_key
+        api_client = RainyunAPI(api_key, config=config)
 
-        logger.info(f"━━━━━━ 雨云签到 v{APP_VERSION} ━━━━━━")
-        if CAPTCHA_RETRY_UNLIMITED:
+        logger.info(f"━━━━━━ 雨云签到 v{config.app_version} ━━━━━━")
+        if config.captcha_retry_unlimited:
             logger.warning("已启用无限重试模式，验证码将持续重试直到成功或手动停止")
 
         # 初始积分记录
@@ -525,7 +518,7 @@ def run():
         ocr = ddddocr.DdddOcr(ocr=True, show_ad=False)
         det = ddddocr.DdddOcr(det=True, show_ad=False)
         logger.info("初始化 Selenium")
-        driver = init_selenium(debug=debug, linux=linux)
+        driver = init_selenium(config=config, debug=debug, linux=linux)
         # 过 Selenium 检测
         with open("stealth.min.js", mode="r") as f:
             js = f.read()
@@ -540,7 +533,8 @@ def run():
             ocr=ocr,
             det=det,
             temp_dir=temp_dir,
-            api=api_client
+            api=api_client,
+            config=config
         )
 
         # 尝试使用 cookie 登录
@@ -557,7 +551,7 @@ def run():
             return
 
         logger.info("正在转到赚取积分页")
-        ctx.driver.get(build_app_url("/account/reward/earn"))
+        ctx.driver.get(build_app_url(ctx.config, "/account/reward/earn"))
 
         # 检查签到状态：使用 card-header 语义化定位，彻底消除位置依赖
         try:
@@ -577,7 +571,7 @@ def run():
                     try:
                         current_points = ctx.api.get_user_points()
                         earned = current_points - start_points
-                        logger.info(f"当前剩余积分: {current_points} (本次获得 {earned} 分) | 约为 {current_points / POINTS_TO_CNY_RATE:.2f} 元")
+                        logger.info(f"当前剩余积分: {current_points} (本次获得 {earned} 分) | 约为 {current_points / config.points_to_cny_rate:.2f} 元")
                     except Exception:
                         logger.info("无法通过 API 获取当前积分信息")
                     return
@@ -595,7 +589,7 @@ def run():
         try:
             current_points = ctx.api.get_user_points()
             earned = current_points - start_points
-            logger.info(f"当前剩余积分: {current_points} (本次获得 {earned} 分) | 约为 {current_points / POINTS_TO_CNY_RATE:.2f} 元")
+            logger.info(f"当前剩余积分: {current_points} (本次获得 {earned} 分) | 约为 {current_points / config.points_to_cny_rate:.2f} 元")
         except Exception:
             logger.info("签到后通过 API 更新积分失败")
         
@@ -615,11 +609,12 @@ def run():
 
         # 2. 服务器到期检查和自动续费（需要配置 API_KEY）
         server_report = ""
-        api_key = os.environ.get("RAINYUN_API_KEY", "")
+        final_config = config or get_default_config()
+        api_key = final_config.rainyun_api_key
         if api_key and ServerManager:
             logger.info("━━━━━━ 开始检查服务器状态 ━━━━━━")
             try:
-                manager = ServerManager(api_key)
+                manager = ServerManager(api_key, config=final_config)
                 result = manager.check_and_renew()
                 server_report = "\n\n" + manager.generate_report(result)
                 logger.info("服务器检查完成")

@@ -3,12 +3,11 @@
 负责服务器到期检查、自动续费等业务逻辑
 """
 import logging
-import os
 from datetime import datetime
 from typing import Optional
 
-from config import DEFAULT_RENEW_COST_7_DAYS
 from api_client import RainyunAPI, RainyunAPIError
+from rainyun.config import Config, get_default_config
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 class ServerInfo:
     """服务器信息"""
 
-    def __init__(self, server_id: int, name: str, expired_at: int, renew_price: int = DEFAULT_RENEW_COST_7_DAYS):
+    def __init__(self, server_id: int, name: str, expired_at: int, renew_price: int):
         self.id = server_id
         self.name = name
         self.expired_at = expired_at  # Unix 时间戳
@@ -42,39 +41,24 @@ class ServerInfo:
 class ServerManager:
     """服务器管理器"""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, config: Optional[Config] = None):
         """
         初始化服务器管理器
 
         Args:
             api_key: 雨云 API 密钥
         """
-        self.api = RainyunAPI(api_key)
-        # 从环境变量读取配置
-        self.auto_renew = os.environ.get("AUTO_RENEW", "true").lower() == "true"
-        # 修复：RENEW_THRESHOLD_DAYS 类型错误时给出明确提示
-        try:
-            self.renew_threshold = int(os.environ.get("RENEW_THRESHOLD_DAYS", "7"))
-        except ValueError:
-            logger.error("配置错误：RENEW_THRESHOLD_DAYS 必须是整数，使用默认值 7")
-            self.renew_threshold = 7
-
-        # 白名单模式：只续费指定的产品ID（逗号分隔，为空则续费所有）
-        renew_ids_str = os.environ.get("RENEW_PRODUCT_IDS", "").strip()
-        self._whitelist_parse_error = False  # 标记白名单解析是否失败
-        if renew_ids_str:
-            try:
-                self.renew_product_ids = [int(x.strip()) for x in renew_ids_str.split(",") if x.strip()]
-                if self.renew_product_ids:
-                    logger.info(f"白名单模式：只续费产品 {self.renew_product_ids}")
-                else:
-                    logger.info("白名单为空，将续费所有服务器")
-            except ValueError:
-                logger.error("配置错误：RENEW_PRODUCT_IDS 格式无效，应为逗号分隔的数字，自动续费已禁用")
-                self.renew_product_ids = []
-                self._whitelist_parse_error = True  # 解析失败时禁用自动续费
-        else:
-            self.renew_product_ids = []  # 空列表表示续费所有
+        self.config = config or get_default_config()
+        self.api = RainyunAPI(api_key, config=self.config)
+        self.auto_renew = self.config.auto_renew
+        self.renew_threshold = self.config.renew_threshold_days
+        self.renew_product_ids = self.config.renew_product_ids
+        self._whitelist_parse_error = self.config.renew_product_ids_parse_error
+        if not self._whitelist_parse_error:
+            if self.renew_product_ids:
+                logger.info(f"白名单模式：只续费产品 {self.renew_product_ids}")
+            else:
+                logger.info("白名单为空，将续费所有服务器")
 
     def get_all_servers(self) -> list:
         """
@@ -108,10 +92,12 @@ class ServerManager:
                     renew_price_map = detail.get("RenewPointPrice") or {}
                     raw_price = renew_price_map.get(7) or renew_price_map.get("7")
                     try:
-                        renew_price = int(raw_price) if raw_price is not None else DEFAULT_RENEW_COST_7_DAYS
+                        renew_price = int(raw_price) if raw_price is not None else self.config.default_renew_cost_7_days
                     except (ValueError, TypeError):
-                        logger.warning(f"服务器 {sid} 的续费价格无效 ({raw_price})，使用默认值 {DEFAULT_RENEW_COST_7_DAYS}")
-                        renew_price = DEFAULT_RENEW_COST_7_DAYS
+                        logger.warning(
+                            f"服务器 {sid} 的续费价格无效 ({raw_price})，使用默认值 {self.config.default_renew_cost_7_days}"
+                        )
+                        renew_price = self.config.default_renew_cost_7_days
                     server = ServerInfo(
                         server_id=sid,
                         name=server_name,
