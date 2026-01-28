@@ -55,7 +55,7 @@ if [ "$CRON_MODE" = "true" ]; then
     echo "时区: $TZ"
 
     # 生成 crontab 文件（使用完整路径）
-    echo "$CRON_SCHEDULE /usr/local/bin/python -u /app/rainyun.py" > /app/crontab
+    echo "$CRON_SCHEDULE /usr/local/bin/python -u -m rainyun" > /app/crontab
 
     echo "=== Crontab 内容 ==="
     cat /app/crontab
@@ -66,5 +66,5 @@ if [ "$CRON_MODE" = "true" ]; then
     exec supercronic -passthrough-logs /app/crontab
 else
     # 单次运行模式（默认，兼容现有行为）
-    exec python -u /app/rainyun.py
+    exec python -u -m rainyun
 fi

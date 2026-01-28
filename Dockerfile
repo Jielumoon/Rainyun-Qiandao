@@ -46,6 +46,7 @@ RUN pip install --upgrade pip setuptools wheel && \
     pip install --no-cache-dir --force-reinstall -r requirements.txt
 
 # 复制应用代码
+COPY rainyun/ ./rainyun/
 COPY rainyun.py .
 COPY config.py .
 COPY notify.py .
