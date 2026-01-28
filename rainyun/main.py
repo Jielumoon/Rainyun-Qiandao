@@ -29,7 +29,7 @@ class CaptchaRetryableError(Exception):
     pass
 
 try:
-    from notify import configure, send
+    from .notify import configure, send
 
     print("✅ 通知模块加载成功")
 except Exception as e:
