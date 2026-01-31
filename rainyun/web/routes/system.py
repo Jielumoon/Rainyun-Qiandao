@@ -31,6 +31,21 @@ def update_settings(
     payload: dict = Body(default_factory=dict), store: DataStore = Depends(get_store)
 ) -> dict:
     data = store.load() if store.data is None else store.data
+    # 保留鉴权配置，避免前端未传 auth 时重置 token 密钥
+    existing_auth = data.settings.auth.to_dict()
+    payload_auth = payload.get("auth")
+    if isinstance(payload_auth, dict):
+        merged_auth = dict(existing_auth)
+        merged_auth.update(payload_auth)
+        if isinstance(payload_auth.get("token"), dict):
+            merged_token = dict(existing_auth.get("token", {}))
+            merged_token.update(payload_auth.get("token") or {})
+            merged_auth["token"] = merged_token
+        else:
+            merged_auth["token"] = existing_auth.get("token", {})
+        payload["auth"] = merged_auth
+    else:
+        payload["auth"] = existing_auth
     settings = Settings.from_dict(payload)
     settings.cron_schedule = normalize_schedule(settings.cron_schedule)
     store.update_settings(settings)

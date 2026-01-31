@@ -75,6 +75,7 @@ const cancelNotifyBtn = document.getElementById("cancel-notify");
 let editingId = null;
 let editingNotifyId = null;
 let notifyChannels = [];
+let savingSettings = false;
 let logTimer = null;
 
 function getToken() {
@@ -968,6 +969,11 @@ function switchTab(tabName) {
 }
 
 async function saveSettings() {
+  if (savingSettings) return;
+  savingSettings = true;
+  if (saveSettingsBtn) {
+    saveSettingsBtn.disabled = true;
+  }
   const notifyChannelsPayload = notifyChannels.map((item) => ({
     id: item.id,
     name: item.name,
@@ -1006,6 +1012,11 @@ async function saveSettings() {
     showToast("设置已保存");
   } catch (err) {
     showToast(err.message || "保存失败", "error");
+  } finally {
+    savingSettings = false;
+    if (saveSettingsBtn) {
+      saveSettingsBtn.disabled = false;
+    }
   }
 }
 
