@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Rainyun 控制台</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
     <div class="bg-orb orb-a"></div>
@@ -121,11 +121,74 @@
               <button id="save-settings" class="primary-btn full">保存设置</button>
             </div>
           </div>
+          <div class="card">
+            <div class="card-header">
+              <h3>高级设置</h3>
+            </div>
+            <div class="form-grid">
+              <label class="field">
+                <span>页面超时（秒）</span>
+                <input id="setting-timeout" type="number" min="1" />
+              </label>
+              <label class="field">
+                <span>随机延时上限（分钟）</span>
+                <input id="setting-max-delay" type="number" min="0" />
+              </label>
+              <label class="field checkbox">
+                <input id="setting-debug" type="checkbox" />
+                <span>调试模式（跳过延时）</span>
+              </label>
+              <label class="field">
+                <span>请求超时（秒）</span>
+                <input id="setting-request-timeout" type="number" min="1" />
+              </label>
+              <label class="field">
+                <span>请求重试次数</span>
+                <input id="setting-max-retries" type="number" min="0" />
+              </label>
+              <label class="field">
+                <span>请求重试间隔（秒）</span>
+                <input id="setting-retry-delay" type="number" min="0" step="0.5" />
+              </label>
+              <label class="field">
+                <span>下载超时（秒）</span>
+                <input id="setting-download-timeout" type="number" min="1" />
+              </label>
+              <label class="field">
+                <span>下载重试次数</span>
+                <input id="setting-download-max-retries" type="number" min="0" />
+              </label>
+              <label class="field">
+                <span>下载重试间隔（秒）</span>
+                <input id="setting-download-retry-delay" type="number" min="0" step="0.5" />
+              </label>
+              <label class="field">
+                <span>验证码重试次数</span>
+                <input id="setting-captcha-retry-limit" type="number" min="0" />
+              </label>
+              <label class="field checkbox">
+                <input id="setting-captcha-retry-unlimited" type="checkbox" />
+                <span>验证码无限重试</span>
+              </label>
+              <label class="field checkbox">
+                <input id="setting-captcha-save-samples" type="checkbox" />
+                <span>保存验证码样本</span>
+              </label>
+              <label class="field full">
+                <span>跳过推送标题（换行分隔）</span>
+                <textarea id="setting-skip-push-title" rows="3"></textarea>
+              </label>
+              <label class="field full">
+                <span>通知配置 JSON（notify_config）</span>
+                <textarea id="setting-notify-config" rows="6" placeholder="{ }"></textarea>
+              </label>
+            </div>
+          </div>
         </div>
       </section>
     </main>
 
     <div id="toast" class="toast hidden"></div>
-    <script src="app.js"></script>
+    <script src="/static/app.js"></script>
   </body>
 </html>

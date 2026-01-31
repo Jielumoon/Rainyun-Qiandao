@@ -81,8 +81,20 @@ class BrowserSession:
             if self.config.chrome_bin and os.path.exists(self.config.chrome_bin):
                 ops.binary_location = self.config.chrome_bin
             # 容器环境使用系统 chromedriver
-            if os.path.exists(self.config.chromedriver_path):
-                return webdriver.Chrome(service=Service(self.config.chromedriver_path), options=ops)
+            driver_path = self.config.chromedriver_path
+            if not os.path.exists(driver_path):
+                candidates = [
+                    "/usr/bin/chromedriver",
+                    "/usr/local/bin/chromedriver",
+                    "/usr/lib/chromium/chromedriver",
+                    "/usr/lib/chromium-browser/chromedriver",
+                ]
+                for candidate in candidates:
+                    if os.path.exists(candidate):
+                        driver_path = candidate
+                        break
+            if os.path.exists(driver_path):
+                return webdriver.Chrome(service=Service(driver_path), options=ops)
             return webdriver.Chrome(service=Service("./chromedriver"), options=ops)
         return webdriver.Chrome(service=Service("chromedriver.exe"), options=ops)
 

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any
 
@@ -47,7 +48,25 @@ class MultiAccountRunner:
             logger.info("未配置任何账户，跳过多账户调度")
             return []
 
-        base_config = Config.from_env({})
+        base_config = Config.from_env(os.environ)
+        settings = data.settings
+        base_config = replace(
+            base_config,
+            timeout=getattr(settings, "timeout", base_config.timeout),
+            max_delay=getattr(settings, "max_delay", base_config.max_delay),
+            debug=getattr(settings, "debug", base_config.debug),
+            request_timeout=getattr(settings, "request_timeout", base_config.request_timeout),
+            max_retries=getattr(settings, "max_retries", base_config.max_retries),
+            retry_delay=getattr(settings, "retry_delay", base_config.retry_delay),
+            download_timeout=getattr(settings, "download_timeout", base_config.download_timeout),
+            download_max_retries=getattr(settings, "download_max_retries", base_config.download_max_retries),
+            download_retry_delay=getattr(settings, "download_retry_delay", base_config.download_retry_delay),
+            captcha_retry_limit=getattr(settings, "captcha_retry_limit", base_config.captcha_retry_limit),
+            captcha_retry_unlimited=getattr(
+                settings, "captcha_retry_unlimited", base_config.captcha_retry_unlimited
+            ),
+            captcha_save_samples=getattr(settings, "captcha_save_samples", base_config.captcha_save_samples),
+        )
         session = BrowserSession(base_config, debug=base_config.debug, linux=base_config.linux_mode)
         driver, wait, temp_dir = session.start()
         ocr = ddddocr.DdddOcr(ocr=True, show_ad=False)

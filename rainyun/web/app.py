@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -50,6 +50,10 @@ def create_app() -> FastAPI:
         @app.get("/")
         async def index() -> FileResponse:
             return FileResponse(static_dir / "index.html")
+
+        @app.get("/favicon.ico", include_in_schema=False)
+        async def favicon() -> Response:
+            return Response(status_code=204)
 
     return app
 

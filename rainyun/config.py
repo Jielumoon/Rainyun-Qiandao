@@ -289,47 +289,42 @@ class Config:
         app_base_url = _read_str(env, "APP_BASE_URL", "https://app.rainyun.com").rstrip("/")
         api_base_url = _read_str(env, "API_BASE_URL", "https://api.v2.rainyun.com").rstrip("/")
         app_version = _read_str(env, "APP_VERSION", "2.7")
-        cookie_file = _read_str(env, "COOKIE_FILE", "cookies.json")
+        cookie_file = _read_str(env, "COOKIE_FILE", "data/cookies/cookies.json")
 
-        points_to_cny_rate = _read_int(env, "POINTS_TO_CNY_RATE", 2000)
-        captcha_retry_limit = _read_int(env, "CAPTCHA_RETRY_LIMIT", 5)
-        captcha_retry_unlimited = _read_bool(env, "CAPTCHA_RETRY_UNLIMITED", False)
-        captcha_save_samples = _read_bool(env, "CAPTCHA_SAVE_SAMPLES", False)
+        points_to_cny_rate = 2000
+        captcha_retry_limit = 5
+        captcha_retry_unlimited = False
+        captcha_save_samples = False
 
-        request_timeout = _read_int(env, "REQUEST_TIMEOUT", 15)
-        max_retries = _read_int(env, "MAX_RETRIES", 3)
-        retry_delay = _read_float(env, "RETRY_DELAY", 2)
+        request_timeout = 15
+        max_retries = 3
+        retry_delay = 2.0
 
-        download_timeout = _read_int(env, "DOWNLOAD_TIMEOUT", 10)
-        download_max_retries = _read_int(env, "DOWNLOAD_MAX_RETRIES", 3)
-        download_retry_delay = _read_float(env, "DOWNLOAD_RETRY_DELAY", 2)
+        download_timeout = 10
+        download_max_retries = 3
+        download_retry_delay = 2.0
 
         chrome_low_memory = _read_bool(env, "CHROME_LOW_MEMORY", False)
-        default_renew_cost_7_days = _read_int(env, "DEFAULT_RENEW_COST_7_DAYS", 2258)
+        default_renew_cost_7_days = 2258
 
-        timeout = _read_int(env, "TIMEOUT", 15)
-        max_delay = _read_int(env, "MAX_DELAY", 90)
-        rainyun_user = _read_str(env, "RAINYUN_USER", "")
-        rainyun_pwd = _read_str(env, "RAINYUN_PWD", "")
-        debug = _read_bool(env, "DEBUG", False)
+        timeout = 15
+        max_delay = 90
+        rainyun_user = ""
+        rainyun_pwd = ""
+        debug = False
         linux_mode = _read_bool(env, "LINUX_MODE", True)
-        rainyun_api_key = _read_str(env, "RAINYUN_API_KEY", "")
+        rainyun_api_key = ""
 
-        auto_renew = _read_bool(env, "AUTO_RENEW", True)
-        renew_threshold_days = _read_int(env, "RENEW_THRESHOLD_DAYS", 7)
-        renew_product_ids, renew_product_ids_parse_error = _parse_int_list(
-            _read_str(env, "RENEW_PRODUCT_IDS", "").strip()
-        )
+        auto_renew = True
+        renew_threshold_days = 7
+        renew_product_ids = []
+        renew_product_ids_parse_error = False
 
         chrome_bin = _read_str(env, "CHROME_BIN", "")
         chromedriver_path = _read_str(env, "CHROMEDRIVER_PATH", "/usr/local/bin/chromedriver")
-        skip_push_title = _read_str(env, "SKIP_PUSH_TITLE", "")
+        skip_push_title = ""
 
         push_config = DEFAULT_PUSH_CONFIG.copy()
-        for key in push_config:
-            value = env.get(key)
-            if value:
-                push_config[key] = value
 
         return cls(
             app_base_url=app_base_url,
@@ -462,14 +457,42 @@ class Config:
 
     @classmethod
     def from_account(cls, account: Any, settings: Any | None = None) -> "Config":
-        base = cls.from_env({})
+        base = cls.from_env(os.environ)
         auto_renew = base.auto_renew
         renew_threshold_days = base.renew_threshold_days
-        push_config = base.push_config.copy()
+        timeout = base.timeout
+        max_delay = base.max_delay
+        debug = base.debug
+        request_timeout = base.request_timeout
+        max_retries = base.max_retries
+        retry_delay = base.retry_delay
+        download_timeout = base.download_timeout
+        download_max_retries = base.download_max_retries
+        download_retry_delay = base.download_retry_delay
+        captcha_retry_limit = base.captcha_retry_limit
+        captcha_retry_unlimited = base.captcha_retry_unlimited
+        captcha_save_samples = base.captcha_save_samples
+        skip_push_title = base.skip_push_title
+        push_config = DEFAULT_PUSH_CONFIG.copy()
 
         if settings is not None:
             auto_renew = getattr(settings, "auto_renew", auto_renew)
             renew_threshold_days = getattr(settings, "renew_threshold_days", renew_threshold_days)
+            timeout = getattr(settings, "timeout", timeout)
+            max_delay = getattr(settings, "max_delay", max_delay)
+            debug = getattr(settings, "debug", debug)
+            request_timeout = getattr(settings, "request_timeout", request_timeout)
+            max_retries = getattr(settings, "max_retries", max_retries)
+            retry_delay = getattr(settings, "retry_delay", retry_delay)
+            download_timeout = getattr(settings, "download_timeout", download_timeout)
+            download_max_retries = getattr(settings, "download_max_retries", download_max_retries)
+            download_retry_delay = getattr(settings, "download_retry_delay", download_retry_delay)
+            captcha_retry_limit = getattr(settings, "captcha_retry_limit", captcha_retry_limit)
+            captcha_retry_unlimited = getattr(
+                settings, "captcha_retry_unlimited", captcha_retry_unlimited
+            )
+            captcha_save_samples = getattr(settings, "captcha_save_samples", captcha_save_samples)
+            skip_push_title = getattr(settings, "skip_push_title", skip_push_title)
             notify_config = getattr(settings, "notify_config", None)
             if isinstance(notify_config, Mapping):
                 for key, value in notify_config.items():
@@ -480,7 +503,10 @@ class Config:
         cookie_file = base.cookie_file
         account_id = getattr(account, "id", "")
         if isinstance(account_id, str) and account_id:
-            cookie_file = f"cookies_{account_id}.json"
+            cookie_dir = os.path.dirname(cookie_file)
+            if not cookie_dir:
+                cookie_dir = "."
+            cookie_file = os.path.join(cookie_dir, f"cookies_{account_id}.json")
 
         return replace(
             base,
@@ -492,6 +518,19 @@ class Config:
             renew_threshold_days=renew_threshold_days,
             renew_product_ids=renew_product_ids,
             renew_product_ids_parse_error=False,
+            timeout=timeout,
+            max_delay=max_delay,
+            debug=debug,
+            request_timeout=request_timeout,
+            max_retries=max_retries,
+            retry_delay=retry_delay,
+            download_timeout=download_timeout,
+            download_max_retries=download_max_retries,
+            download_retry_delay=download_retry_delay,
+            captcha_retry_limit=captcha_retry_limit,
+            captcha_retry_unlimited=captcha_retry_unlimited,
+            captcha_save_samples=captcha_save_samples,
+            skip_push_title=skip_push_title,
             push_config=push_config,
         )
 

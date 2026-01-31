@@ -4,37 +4,25 @@ services:
   rainyun-qiandao:
     build: .
     container_name: rainyun-qiandao
-    init: true  # 让 tini 作为 PID1，定时模式必需
+    init: true  # 让 tini 作为 PID1
     env_file:
       - .env
     environment:
-      - RAINYUN_USER=${RAINYUN_USER}        # 雨云用户名
-      - RAINYUN_PWD=${RAINYUN_PWD}          # 雨云密码
-      - TIMEOUT=${TIMEOUT:-15}              # 连接超时等待(秒)
-      - MAX_DELAY=${MAX_DELAY:-90}          # 最大随机等待延时(分钟)
-      - DEBUG=${DEBUG:-false}               # 调试模式
-      - CHROME_LOW_MEMORY=${CHROME_LOW_MEMORY:-false}  # Chrome低内存模式(1核1G小鸡用)
-      # 服务器管理功能 (可选)
-      - RAINYUN_API_KEY=${RAINYUN_API_KEY:-}           # API密钥
-      - AUTO_RENEW=${AUTO_RENEW:-true}                 # 自动续费开关
-      - RENEW_THRESHOLD_DAYS=${RENEW_THRESHOLD_DAYS:-7}  # 续费触发阈值
-      - RENEW_PRODUCT_IDS=${RENEW_PRODUCT_IDS:-}         # 续费白名单
-      # 推送服务 (示例)
-      - PUSH_KEY=${PUSH_KEY:-}                           # Server酱推送密钥
-      # 定时模式 (可选，默认关闭)
-      - CRON_MODE=${CRON_MODE:-false}                    # 定时模式开关
-      - "CRON_SCHEDULE=${CRON_SCHEDULE:-0 8 * * *}"       # 执行计划(cron表达式)
-      # Web 面板
-      - WEB_ENABLED=${WEB_ENABLED:-true}
+      # Web 面板（强制开启）
+      - WEB_ENABLED=true
       - WEB_HOST=${WEB_HOST:-0.0.0.0}
       - WEB_PORT=${WEB_PORT:-8000}
       - DATA_PATH=${DATA_PATH:-data/config.json}
+      # 定时模式（默认开启）
+      - CRON_MODE=true
+      # 浏览器运行环境
+      - CHROME_BIN=${CHROME_BIN:-/usr/bin/chromium}
+      - CHROMEDRIVER_PATH=${CHROMEDRIVER_PATH:-/usr/bin/chromedriver}
+      - CHROME_LOW_MEMORY=${CHROME_LOW_MEMORY:-false}
     ports:
       - "${WEB_PORT:-8000}:8000"
     volumes:
-      - ./temp:/app/temp                    # 临时文件目录
-      - ./cookies.json:/app/cookies.json    # 持久化 cookies
       - ./data:/app/data                    # 持久化数据
-      - ./rainyun:/app/rainyun
+      - ./temp:/app/temp                    # 临时文件目录
     shm_size: '2gb'                         # Chrome 需要足够的共享内存
     restart: "no"

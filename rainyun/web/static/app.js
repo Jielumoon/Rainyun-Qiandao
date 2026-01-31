@@ -23,6 +23,20 @@ const accountEnabled = document.getElementById("account-enabled");
 const settingAutoRenew = document.getElementById("setting-auto-renew");
 const settingRenewDays = document.getElementById("setting-renew-days");
 const settingCron = document.getElementById("setting-cron");
+const settingTimeout = document.getElementById("setting-timeout");
+const settingMaxDelay = document.getElementById("setting-max-delay");
+const settingDebug = document.getElementById("setting-debug");
+const settingRequestTimeout = document.getElementById("setting-request-timeout");
+const settingMaxRetries = document.getElementById("setting-max-retries");
+const settingRetryDelay = document.getElementById("setting-retry-delay");
+const settingDownloadTimeout = document.getElementById("setting-download-timeout");
+const settingDownloadMaxRetries = document.getElementById("setting-download-max-retries");
+const settingDownloadRetryDelay = document.getElementById("setting-download-retry-delay");
+const settingCaptchaRetryLimit = document.getElementById("setting-captcha-retry-limit");
+const settingCaptchaRetryUnlimited = document.getElementById("setting-captcha-retry-unlimited");
+const settingCaptchaSaveSamples = document.getElementById("setting-captcha-save-samples");
+const settingSkipPushTitle = document.getElementById("setting-skip-push-title");
+const settingNotifyConfig = document.getElementById("setting-notify-config");
 const saveSettingsBtn = document.getElementById("save-settings");
 
 let editingId = null;
@@ -44,6 +58,15 @@ function showToast(message, type = "success") {
   toast.className = `toast ${type}`;
   toast.classList.remove("hidden");
   setTimeout(() => toast.classList.add("hidden"), 2800);
+}
+
+function readNumberValue(input, fallback) {
+  const raw = input.value.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
 }
 
 async function apiFetch(path, options = {}) {
@@ -123,6 +146,21 @@ async function loadSettings() {
   settingAutoRenew.checked = !!settings.auto_renew;
   settingRenewDays.value = settings.renew_threshold_days || 7;
   settingCron.value = settings.cron_schedule || "0 8 * * *";
+  settingTimeout.value = settings.timeout ?? 15;
+  settingMaxDelay.value = settings.max_delay ?? 90;
+  settingDebug.checked = !!settings.debug;
+  settingRequestTimeout.value = settings.request_timeout ?? 15;
+  settingMaxRetries.value = settings.max_retries ?? 3;
+  settingRetryDelay.value = settings.retry_delay ?? 2;
+  settingDownloadTimeout.value = settings.download_timeout ?? 10;
+  settingDownloadMaxRetries.value = settings.download_max_retries ?? 3;
+  settingDownloadRetryDelay.value = settings.download_retry_delay ?? 2;
+  settingCaptchaRetryLimit.value = settings.captcha_retry_limit ?? 5;
+  settingCaptchaRetryUnlimited.checked = !!settings.captcha_retry_unlimited;
+  settingCaptchaSaveSamples.checked = !!settings.captcha_save_samples;
+  settingSkipPushTitle.value = settings.skip_push_title || "";
+  const notifyConfig = settings.notify_config || {};
+  settingNotifyConfig.value = JSON.stringify(notifyConfig, null, 2);
 }
 
 async function loadAll() {
@@ -209,10 +247,38 @@ async function runCheckin() {
 }
 
 async function saveSettings() {
+  let notifyConfig = {};
+  const notifyRaw = settingNotifyConfig.value.trim();
+  if (notifyRaw) {
+    try {
+      notifyConfig = JSON.parse(notifyRaw);
+    } catch (err) {
+      showToast("通知配置 JSON 无效", "error");
+      return;
+    }
+    if (typeof notifyConfig !== "object" || Array.isArray(notifyConfig)) {
+      showToast("通知配置需为对象", "error");
+      return;
+    }
+  }
   const payload = {
     auto_renew: settingAutoRenew.checked,
-    renew_threshold_days: Number(settingRenewDays.value || 7),
+    renew_threshold_days: readNumberValue(settingRenewDays, 7),
     cron_schedule: settingCron.value.trim() || "0 8 * * *",
+    timeout: readNumberValue(settingTimeout, 15),
+    max_delay: readNumberValue(settingMaxDelay, 90),
+    debug: settingDebug.checked,
+    request_timeout: readNumberValue(settingRequestTimeout, 15),
+    max_retries: readNumberValue(settingMaxRetries, 3),
+    retry_delay: readNumberValue(settingRetryDelay, 2),
+    download_timeout: readNumberValue(settingDownloadTimeout, 10),
+    download_max_retries: readNumberValue(settingDownloadMaxRetries, 3),
+    download_retry_delay: readNumberValue(settingDownloadRetryDelay, 2),
+    captcha_retry_limit: readNumberValue(settingCaptchaRetryLimit, 5),
+    captcha_retry_unlimited: settingCaptchaRetryUnlimited.checked,
+    captcha_save_samples: settingCaptchaSaveSamples.checked,
+    skip_push_title: settingSkipPushTitle.value.trim(),
+    notify_config: notifyConfig,
   };
   try {
     await apiFetch("/api/system/settings", {

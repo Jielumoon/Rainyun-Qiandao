@@ -174,7 +174,23 @@ h1 {
   border-radius: 12px;
 }
 
+.field textarea {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid transparent;
+  color: var(--text);
+  padding: 10px 12px;
+  border-radius: 12px;
+  resize: vertical;
+  min-height: 90px;
+}
+
 .field input:focus {
+  outline: none;
+  border-color: rgba(255, 139, 61, 0.6);
+  box-shadow: 0 0 0 2px rgba(255, 139, 61, 0.15);
+}
+
+.field textarea:focus {
   outline: none;
   border-color: rgba(255, 139, 61, 0.6);
   box-shadow: 0 0 0 2px rgba(255, 139, 61, 0.15);
@@ -184,6 +200,10 @@ h1 {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+}
+
+.field.full {
+  grid-column: 1 / -1;
 }
 
 .primary-btn {

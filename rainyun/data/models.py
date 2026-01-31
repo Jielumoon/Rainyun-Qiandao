@@ -39,6 +39,19 @@ def _read_int(data: Mapping[str, Any], key: str, default: int = 0) -> int:
     return default
 
 
+def _read_float(data: Mapping[str, Any], key: str, default: float = 0.0) -> float:
+    value = data.get(key)
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        stripped = value.strip()
+        try:
+            return float(stripped)
+        except ValueError:
+            return default
+    return default
+
+
 def _read_list_int(data: Mapping[str, Any], key: str) -> list[int]:
     value = data.get(key)
     if not isinstance(value, list):
@@ -165,6 +178,19 @@ class Settings:
     auto_renew: bool = True
     renew_threshold_days: int = 7
     cron_schedule: str = "0 8 * * *"
+    timeout: int = 15
+    max_delay: int = 90
+    debug: bool = False
+    request_timeout: int = 15
+    max_retries: int = 3
+    retry_delay: float = 2.0
+    download_timeout: int = 10
+    download_max_retries: int = 3
+    download_retry_delay: float = 2.0
+    captcha_retry_limit: int = 5
+    captcha_retry_unlimited: bool = False
+    captcha_save_samples: bool = False
+    skip_push_title: str = ""
     notify_config: dict[str, str] = field(default_factory=dict)
     auth: AuthConfig = field(default_factory=AuthConfig)
 
@@ -175,6 +201,19 @@ class Settings:
             auto_renew=_read_bool(payload, "auto_renew", True),
             renew_threshold_days=_read_int(payload, "renew_threshold_days", 7),
             cron_schedule=_read_str(payload, "cron_schedule", "0 8 * * *"),
+            timeout=_read_int(payload, "timeout", 15),
+            max_delay=_read_int(payload, "max_delay", 90),
+            debug=_read_bool(payload, "debug", False),
+            request_timeout=_read_int(payload, "request_timeout", 15),
+            max_retries=_read_int(payload, "max_retries", 3),
+            retry_delay=_read_float(payload, "retry_delay", 2.0),
+            download_timeout=_read_int(payload, "download_timeout", 10),
+            download_max_retries=_read_int(payload, "download_max_retries", 3),
+            download_retry_delay=_read_float(payload, "download_retry_delay", 2.0),
+            captcha_retry_limit=_read_int(payload, "captcha_retry_limit", 5),
+            captcha_retry_unlimited=_read_bool(payload, "captcha_retry_unlimited", False),
+            captcha_save_samples=_read_bool(payload, "captcha_save_samples", False),
+            skip_push_title=_read_str(payload, "skip_push_title", ""),
             notify_config=_read_dict_str(payload, "notify_config"),
             auth=AuthConfig.from_dict(payload.get("auth")),
         )
@@ -184,6 +223,19 @@ class Settings:
             "auto_renew": self.auto_renew,
             "renew_threshold_days": self.renew_threshold_days,
             "cron_schedule": self.cron_schedule,
+            "timeout": self.timeout,
+            "max_delay": self.max_delay,
+            "debug": self.debug,
+            "request_timeout": self.request_timeout,
+            "max_retries": self.max_retries,
+            "retry_delay": self.retry_delay,
+            "download_timeout": self.download_timeout,
+            "download_max_retries": self.download_max_retries,
+            "download_retry_delay": self.download_retry_delay,
+            "captcha_retry_limit": self.captcha_retry_limit,
+            "captcha_retry_unlimited": self.captcha_retry_unlimited,
+            "captcha_save_samples": self.captcha_save_samples,
+            "skip_push_title": self.skip_push_title,
             "notify_config": dict(self.notify_config),
             "auth": self.auth.to_dict(),
         }

@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 def save_cookies(driver: WebDriver, config: Config) -> None:
     """保存 cookies 到文件。"""
     cookies = driver.get_cookies()
+    cookie_dir = os.path.dirname(config.cookie_file)
+    if cookie_dir:
+        os.makedirs(cookie_dir, exist_ok=True)
     with open(config.cookie_file, "w") as f:
         json.dump(cookies, f)
     logger.info(f"Cookies 已保存到 {config.cookie_file}")

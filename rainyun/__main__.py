@@ -1,11 +1,12 @@
-"""模块入口：python -m rainyun。"""
+"""模块入口：python -m rainyun（已废弃）。"""
 
-from .main import run
+import sys
 
 
-def main() -> None:
-    run()
+def main() -> int:
+    sys.stderr.write("CLI 已废弃，请使用 Web 面板或定时模式运行。\n")
+    return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
