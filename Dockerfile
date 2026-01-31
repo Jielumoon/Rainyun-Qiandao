@@ -48,8 +48,8 @@ COPY entrypoint.sh .
 RUN sed -i 's/\r$//' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # 仅保留运行层环境变量（业务配置全部走 Web 面板）
-# 定时模式配置
-ENV CRON_MODE=false
+# 定时模式配置（默认开启）
+ENV CRON_MODE=true
 # Chromium 路径（Debian 系统）
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
