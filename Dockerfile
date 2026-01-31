@@ -8,6 +8,7 @@ RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 # 安装 Chromium 和依赖（支持 ARM 和 AMD64）
 RUN apt-get update && apt-get install -y \
     ca-certificates \
+    cron \
     chromium \
     chromium-driver \
     libglib2.0-0 \
@@ -30,12 +31,6 @@ RUN apt-get update && apt-get install -y \
     libgbm1 \
     libasound2t64 \
     && rm -rf /var/lib/apt/lists/*
-
-# 安装 supercronic（容器定时任务调度器）
-# 使用本地预编译的二进制文件，避免构建时依赖 GitHub
-ARG TARGETARCH
-COPY bin/supercronic-linux-${TARGETARCH} /usr/local/bin/supercronic
-RUN chmod +x /usr/local/bin/supercronic
 
 WORKDIR /app
 

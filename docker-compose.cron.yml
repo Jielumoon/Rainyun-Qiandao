@@ -7,8 +7,7 @@
 
 services:
   rainyun-qiandao:
-    init: true  # 让 tini 作为 PID1，避免 supercronic reaper 报错
+    init: true  # 让 tini 作为 PID1，避免 cron 子进程残留
     environment:
       - CRON_MODE=true
-      - "CRON_SCHEDULE=${CRON_SCHEDULE:-0 8 * * *}"
     restart: unless-stopped
