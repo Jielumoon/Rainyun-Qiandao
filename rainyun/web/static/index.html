@@ -10,6 +10,7 @@
     <div class="bg-orb orb-a"></div>
     <div class="bg-orb orb-b"></div>
     <div class="bg-orb orb-c"></div>
+    <div class="bg-orb orb-d"></div>
 
     <main class="app">
       <header class="app-header">
@@ -83,15 +84,25 @@
                 <span>续费白名单</span>
                 <input id="account-renew" placeholder="示例: 123,456" />
               </label>
-              <label class="field checkbox">
-                <input id="account-enabled" type="checkbox" checked />
-                <span>启用账户</span>
-              </label>
-              <label class="field checkbox">
-                <input id="account-auto-renew" type="checkbox" checked />
-                <span>自动续费</span>
-              </label>
-              <button id="save-account" class="primary-btn full">保存账户</button>
+              <div class="toggle-row">
+                <div class="toggle">
+                  <span>启用账户</span>
+                  <label class="switch">
+                    <input id="account-enabled" type="checkbox" checked />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+                <div class="toggle">
+                  <span>自动续费</span>
+                  <label class="switch">
+                    <input id="account-auto-renew" type="checkbox" checked />
+                    <span class="slider"></span>
+                  </label>
+                </div>
+              </div>
+              <div class="form-actions">
+                <button id="save-account" class="primary-btn">保存账户</button>
+              </div>
             </div>
           </div>
           <div class="card">
@@ -188,10 +199,13 @@
                   <span>类型</span>
                   <select id="notify-type"></select>
                 </label>
-                <label class="field checkbox">
-                  <input id="notify-enabled" type="checkbox" checked />
+                <div class="toggle-field">
                   <span>启用渠道</span>
-                </label>
+                  <label class="switch">
+                    <input id="notify-enabled" type="checkbox" checked />
+                    <span class="slider"></span>
+                  </label>
+                </div>
                 <div id="notify-fields-console" class="notify-fields hidden">
                   <p class="field-tip">控制台输出无需额外配置。</p>
                 </div>
@@ -631,10 +645,13 @@
               <div class="card-header">
                 <h3>实时日志</h3>
                 <div class="card-actions">
-                  <label class="field checkbox small">
-                    <input id="log-auto-refresh" type="checkbox" checked />
+                  <div class="toggle">
                     <span>自动刷新</span>
-                  </label>
+                    <label class="switch">
+                      <input id="log-auto-refresh" type="checkbox" checked />
+                      <span class="slider"></span>
+                    </label>
+                  </div>
                   <button id="refresh-logs" class="ghost-btn">刷新</button>
                   <button id="clear-logs" class="ghost-btn">清空日志</button>
                 </div>
