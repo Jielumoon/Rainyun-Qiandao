@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/accounts", tags=["accounts"], dependencies=[Depe
 
 @router.get("")
 def list_accounts(store: DataStore = Depends(get_store)) -> dict:
-    data = store.load() if store.data is None else store.data
+    data = store.load()
     accounts = [account.to_dict() for account in data.accounts]
     return success_response(accounts)
 
@@ -26,7 +26,7 @@ def list_accounts(store: DataStore = Depends(get_store)) -> dict:
 def create_account(
     payload: dict = Body(default_factory=dict), store: DataStore = Depends(get_store)
 ) -> dict:
-    data = store.load() if store.data is None else store.data
+    data = store.load()
     account = Account.from_dict(payload)
     if not account.id:
         account.id = f"acc_{uuid4().hex[:8]}"
@@ -39,7 +39,7 @@ def create_account(
 
 @router.get("/{account_id}")
 def get_account(account_id: str, store: DataStore = Depends(get_store)) -> dict:
-    data = store.load() if store.data is None else store.data
+    data = store.load()
     account = next((item for item in data.accounts if item.id == account_id), None)
     if not account:
         raise ApiError("账户不存在", status_code=404)
@@ -52,8 +52,20 @@ def update_account(
     payload: dict = Body(default_factory=dict),
     store: DataStore = Depends(get_store),
 ) -> dict:
-    data = store.load() if store.data is None else store.data
-    account = Account.from_dict(payload)
+    data = store.load()
+    existing = next((item for item in data.accounts if item.id == account_id), None)
+    if not existing:
+        raise ApiError("账户不存在", status_code=404)
+    account = Account.from_dict(existing.to_dict())
+    patch = Account.from_dict(payload)
+    account.name = patch.name or account.name
+    account.username = patch.username or account.username
+    if patch.password:
+        account.password = patch.password
+    account.api_key = patch.api_key or account.api_key
+    account.enabled = patch.enabled
+    account.auto_renew = patch.auto_renew
+    account.renew_products = patch.renew_products
     account.id = account_id
     try:
         store.update_account(account)
@@ -64,6 +76,7 @@ def update_account(
 
 @router.delete("/{account_id}")
 def delete_account(account_id: str, store: DataStore = Depends(get_store)) -> dict:
+    store.load()
     deleted = store.delete_account(account_id)
     if not deleted:
         raise ApiError("账户不存在", status_code=404)

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import random
+import time
 import os
 import shutil
 from dataclasses import dataclass, replace
@@ -85,16 +87,34 @@ class MultiAccountRunner:
         det = LazyDdddOcr(det=True)
         return base_config, session, driver, wait, temp_dir, ocr, det
 
+    def _apply_random_delay(self, settings: Any) -> None:
+        debug = getattr(settings, "debug", False)
+        max_delay = getattr(settings, "max_delay", 0)
+        if debug:
+            logger.info("调试模式已开启，跳过随机延时")
+            return
+        if not isinstance(max_delay, int) or max_delay <= 0:
+            return
+        delay_min = random.randint(0, max_delay)
+        delay_sec = random.randint(0, 60)
+        logger.info("随机延时等待 %s 分钟 %s 秒", delay_min, delay_sec)
+        time.sleep(delay_min * 60 + delay_sec)
+
     def _close_session(self, session: BrowserSession, temp_dir: str | None, base_config: Config) -> None:
         session.close()
         if temp_dir and not base_config.debug:
             shutil.rmtree(temp_dir, ignore_errors=True)
 
-    def run(self) -> list[AccountRunResult]:
+    def run(self, delay: bool = False) -> list[AccountRunResult]:
         data = self.store.load() if self.store.data is None else self.store.data
         if not data.accounts:
             logger.info("未配置任何账户，跳过多账户调度")
             return []
+        if not any(getattr(account, "enabled", False) for account in data.accounts):
+            logger.info("没有启用的账户，跳过多账户调度")
+            return []
+        if delay:
+            self._apply_random_delay(data.settings)
 
         base_config, session, driver, wait, temp_dir, ocr, det = self._create_session(data.settings)
 
@@ -118,7 +138,7 @@ class MultiAccountRunner:
             self._close_session(session, temp_dir, base_config)
         return results
 
-    def run_for_account(self, account_id: str) -> AccountRunResult | None:
+    def run_for_account(self, account_id: str, delay: bool = False) -> AccountRunResult | None:
         data = self.store.load() if self.store.data is None else self.store.data
         account = next(
             (item for item in data.accounts if str(getattr(item, "id", "")) == str(account_id)),
@@ -126,6 +146,8 @@ class MultiAccountRunner:
         )
         if not account:
             return None
+        if delay:
+            self._apply_random_delay(data.settings)
         base_config, session, driver, wait, temp_dir, ocr, det = self._create_session(data.settings)
         try:
             return self._run_single_account(

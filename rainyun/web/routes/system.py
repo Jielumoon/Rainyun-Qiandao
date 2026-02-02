@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 @router.get("/settings")
 def get_settings(store: DataStore = Depends(get_store)) -> dict:
-    data = store.load() if store.data is None else store.data
+    data = store.load()
     return success_response(data.settings.to_dict())
 
 
@@ -29,23 +29,28 @@ def get_settings(store: DataStore = Depends(get_store)) -> dict:
 def update_settings(
     payload: dict = Body(default_factory=dict), store: DataStore = Depends(get_store)
 ) -> dict:
-    data = store.load() if store.data is None else store.data
+    data = store.load()
+    existing_settings = data.settings.to_dict()
     # 保留鉴权配置，避免前端未传 auth 时重置 token 密钥
-    existing_auth = data.settings.auth.to_dict()
+    existing_auth = dict(existing_settings.get("auth", {}))
     payload_auth = payload.get("auth")
     if isinstance(payload_auth, dict):
         merged_auth = dict(existing_auth)
         merged_auth.update(payload_auth)
         if isinstance(payload_auth.get("token"), dict):
-            merged_token = dict(existing_auth.get("token", {}))
+            merged_token = dict(merged_auth.get("token", {}))
             merged_token.update(payload_auth.get("token") or {})
             merged_auth["token"] = merged_token
+        elif "token" not in payload_auth:
+            merged_auth["token"] = merged_auth.get("token", {})
         else:
             merged_auth["token"] = existing_auth.get("token", {})
         payload["auth"] = merged_auth
     else:
         payload["auth"] = existing_auth
-    settings = Settings.from_dict(payload)
+    merged_payload = dict(existing_settings)
+    merged_payload.update(payload)
+    settings = Settings.from_dict(merged_payload)
     settings.cron_schedule = normalize_schedule(settings.cron_schedule)
     store.update_settings(settings)
     if os.environ.get("CRON_MODE", "false").strip().lower() == "true":
@@ -61,7 +66,7 @@ def test_notify(payload: dict = Body(default_factory=dict), store: DataStore = D
     channel_id = payload.get("channel_id")
     if not channel_id:
         raise ApiError("缺少通知渠道 ID", status_code=400)
-    data = store.load() if store.data is None else store.data
+    data = store.load()
     channels = getattr(data.settings, "notify_channels", [])
     channel = next(
         (item for item in channels if isinstance(item, Mapping) and item.get("id") == channel_id),

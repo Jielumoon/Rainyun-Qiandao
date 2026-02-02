@@ -34,7 +34,7 @@ def _suppress_manager_logs(level: int = logging.ERROR):
 
 @router.post("/check/{account_id}")
 def check_servers(account_id: str, store: DataStore = Depends(get_store)) -> dict:
-    data = store.load() if store.data is None else store.data
+    data = store.load()
     account = next(
         (item for item in data.accounts if str(getattr(item, "id", "")) == str(account_id)),
         None,
@@ -54,7 +54,7 @@ def check_servers(account_id: str, store: DataStore = Depends(get_store)) -> dic
 
 @router.get("/summary/{account_id}")
 def summarize_servers(account_id: str, store: DataStore = Depends(get_store)) -> dict:
-    data = store.load() if store.data is None else store.data
+    data = store.load()
     account = next(
         (item for item in data.accounts if str(getattr(item, "id", "")) == str(account_id)),
         None,

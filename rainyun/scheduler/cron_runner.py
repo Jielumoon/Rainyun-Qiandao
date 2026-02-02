@@ -53,7 +53,7 @@ def main() -> int:
     try:
         store = DataStore()
         runner = MultiAccountRunner(store)
-        results = runner.run()
+        results = runner.run(delay=True)
         total = len(results)
         success = sum(1 for item in results if item.success)
         renew_results = runner.run_renew()
