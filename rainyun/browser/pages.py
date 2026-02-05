@@ -8,6 +8,7 @@ from typing import Callable
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.wait import WebDriverWait
 
 from rainyun.browser.cookies import save_cookies
 from rainyun.browser.locators import XPATH_CONFIG
@@ -79,6 +80,11 @@ class LoginPage:
 
 
 class RewardPage:
+    _DAILY_SIGN_CLAIM_TEXT = "领取奖励"
+    # 只在“每日签到”模块内匹配这些文案，避免“已完成”在其他任务卡片出现导致误判
+    _DAILY_SIGN_DONE_PATTERNS = ("已完成", "已领取", "已签到", "明日再来")
+    _DAILY_SIGN_DONE_WAIT_SECONDS = 10
+
     def __init__(self, ctx: RuntimeContext, captcha_handler: CaptchaHandler) -> None:
         self.ctx = ctx
         self.captcha_handler = captcha_handler
@@ -86,42 +92,92 @@ class RewardPage:
     def open(self) -> None:
         self.ctx.driver.get(build_app_url(self.ctx.config, "/account/reward/earn"))
 
+    def _get_daily_sign_header_text(self) -> str:
+        """读取“每日签到”卡片头部可见文本。
+
+        注意：必须限定在每日签到模块范围内匹配，避免全页扫文案导致误判。
+        """
+
+        try:
+            elements = self.ctx.driver.find_elements(By.XPATH, XPATH_CONFIG["SIGN_IN_HEADER"])
+            if not elements:
+                return ""
+            header = elements[0]
+            return (header.get_attribute("innerText") or header.text or "").strip()
+        except Exception:
+            return ""
+
+    def _detect_daily_sign_done_pattern(self) -> str | None:
+        header_text = self._get_daily_sign_header_text()
+        for pattern in self._DAILY_SIGN_DONE_PATTERNS:
+            if pattern in header_text:
+                return pattern
+        return None
+
+    def _wait_daily_sign_done_pattern(self, timeout: int | None = None) -> str | None:
+        if timeout is None:
+            timeout = self._DAILY_SIGN_DONE_WAIT_SECONDS
+        wait = WebDriverWait(self.ctx.driver, timeout, poll_frequency=0.5)
+        try:
+            return wait.until(lambda driver: self._detect_daily_sign_done_pattern() or False)
+        except TimeoutException:
+            return None
+
     def handle_daily_reward(self, start_points: int) -> dict:
         user_label = self.ctx.config.display_name or self.ctx.config.rainyun_user
         self.open()
         try:
-            # 使用显示等待寻找按钮
-            earn = self.ctx.wait.until(
-                EC.presence_of_element_located((By.XPATH, XPATH_CONFIG["SIGN_IN_BTN"]))
+            # 先确保“每日签到”模块已加载，再做任何状态判定/点击操作
+            self.ctx.wait.until(EC.presence_of_element_located((By.XPATH, XPATH_CONFIG["SIGN_IN_HEADER"])))
+        except TimeoutException:
+            raise Exception("奖励页加载超时：未找到每日签到模块，可能页面结构已变更")
+
+        done_pattern = self._detect_daily_sign_done_pattern()
+        if done_pattern:
+            logger.info(
+                f":down_arrow: 用户 {user_label} 今日已签到（每日签到模块检测到：{done_pattern}），跳过签到流程"
             )
-            logger.info(f"用户 {user_label} 点击赚取积分")
+            current_points, earned = self._log_points(start_points)
+            return {
+                "status": "already_signed",
+                "current_points": current_points,
+                "earned": earned,
+            }
+
+        try:
+            # 使用显式等待寻找按钮（只针对“每日签到”模块内的领取按钮）
+            earn = self.ctx.wait.until(EC.presence_of_element_located((By.XPATH, XPATH_CONFIG["SIGN_IN_BTN"])))
+            logger.info(f"用户 {user_label} 点击领取奖励")
             earn.click()
         except TimeoutException:
-            already_signed_patterns = ["已领取", "已完成", "已签到", "明日再来"]
-            page_source = self.ctx.driver.page_source
-            for pattern in already_signed_patterns:
-                if pattern in page_source:
-                    logger.info(
-                        f":down_arrow: 用户 {user_label} 今日已签到（检测到：{pattern}），跳过签到流程"
-                    )
-                    current_points, earned = self._log_points(start_points)
-                    return {
-                        "status": "already_signed",
-                        "current_points": current_points,
-                        "earned": earned,
-                    }
-            raise Exception("未找到签到按钮，且未检测到已签到状态，可能页面结构已变更")
+            header_text = self._get_daily_sign_header_text()
+            if self._DAILY_SIGN_CLAIM_TEXT in header_text:
+                raise Exception("未找到每日签到的领取按钮（模块仍显示“领取奖励”），可能页面结构已变更")
+            raise Exception("未找到每日签到的领取按钮，且未检测到完成状态，可能页面结构已变更")
 
         logger.info(f"用户 {user_label} 处理验证码")
-        self.ctx.driver.switch_to.frame("tcaptcha_iframe_dy")
-        if not self.captcha_handler(self.ctx):
-            logger.error(
-                f"用户 {user_label} 验证码重试次数过多，签到失败。当前页面状态: {self.ctx.driver.current_url}"
-            )
-            raise Exception("验证码识别重试次数过多，签到失败")
-        self.ctx.driver.switch_to.default_content()
+        try:
+            self.ctx.wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "tcaptcha_iframe_dy")))
+            if not self.captcha_handler(self.ctx):
+                logger.error(
+                    f"用户 {user_label} 验证码重试次数过多，签到失败。当前页面状态: {self.ctx.driver.current_url}"
+                )
+                raise Exception("验证码识别重试次数过多，签到失败")
+        except TimeoutException:
+            # 极少数情况下可能不触发验证码：直接走状态判定，避免无意义失败
+            logger.info(f"用户 {user_label} 未触发验证码")
+        finally:
+            self.ctx.driver.switch_to.default_content()
+
+        done_pattern = self._wait_daily_sign_done_pattern()
+        if not done_pattern:
+            header_text = self._get_daily_sign_header_text()
+            if self._DAILY_SIGN_CLAIM_TEXT in header_text:
+                raise Exception("验证码处理结束后每日签到仍显示“领取奖励”，未检测到“已完成”，签到可能失败")
+            raise Exception("验证码处理结束后未检测到每日签到完成状态，可能页面结构已变更")
+
         current_points, earned = self._log_points(start_points)
-        logger.info(f"用户 {user_label} 签到成功")
+        logger.info(f"用户 {user_label} 签到成功（每日签到模块检测到：{done_pattern}）")
         return {
             "status": "signed",
             "current_points": current_points,
