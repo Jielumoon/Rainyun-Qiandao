@@ -141,7 +141,14 @@ def main() -> int:
                         content_lines.append(f"结果: {item.message}")
                     content_lines.append("")
                 content = "\n".join(content_lines).strip()
-                send("雨云定时任务", content)
+                failed = total - success
+                if total == 0:
+                    title = "雨云定时任务"
+                elif failed == 0:
+                    title = f"雨云定时任务（签到全部成功，共 {total} 个账户）"
+                else:
+                    title = f"雨云定时任务（签到 {success} 成功 {failed} 失败）"
+                send(title, content)
             else:
                 logger.info("未启用任何账户，跳过通知")
         except Exception as notify_exc:
